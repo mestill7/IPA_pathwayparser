@@ -31,7 +31,32 @@ fix_slots <- function(x,curmat,
     return(TRUE)
   }
 }
+
+## Supplement missing entries
+clean_df <- function(curdf,feat_vec,select_by="Upstream.Regulator",
+                     cat_1="Analysis",fix_by="Bias.corrected.z.score",
+                     replace_vec=c(0),current_set=c_set){
+  out_df <- curdf
+  # loop through features
+  for(curvar in feat_vec){
+    d5 <- curdf[curdf[,select_by]==curvar,]
+    if(all(current_set%in%d5[,cat_1])){
+      out_df <- rbind(d5,out_df)
+    }else{
+      ## which features are missing?
+      missing_feat <- current_set[!(current_set%in%d5[,cat_1])]
+      for(cur_miss in missing_feat){
+        d5[nrow(d5)+1,c(cat_1,select_by,fix_by)] <- c(cur_miss,curvar,replace_vec)
+      }
+      out_df <- rbind(d5,out_df)
+    }
+  }
+  ## remove duplicate entries
+  out_df <- out_df[!(duplicated(out_df[,c(cat_1,select_by)])),]
+  return(out_df)
+}
 ## End helper functions
+
 
 ## Primary function for generating plots
 gen_plot <- function(c_set,k=3,canon_select=NULL,
@@ -70,6 +95,24 @@ gen_plot <- function(c_set,k=3,canon_select=NULL,
     z_valid <- sapply(causal_select,fix_slots,d3,select_by="Upstream.Regulator",extract_by="Bias.corrected.z.score")
   }
   d4 <- d3[d3$Upstream.Regulator%in%names(z_valid[z_valid]),]
+  ## Supplement missing entries
+  d3 <- clean_df(d3,feat_vec=unique(d3$Upstream.Regulator),
+                 select_by="Upstream.Regulator",
+                 cat_1="Analysis",
+                 fix_by=c("Bias.corrected.z.score","p.value.of.overlap"),
+                 replace_vec=c(0,1),current_set=c_set)
+  d3$Bias.corrected.z.score <- as.numeric(d3$Bias.corrected.z.score)
+  d3$p.value.of.overlap <- as.numeric(d3$p.value.of.overlap)
+  
+  d4 <- clean_df(d4,feat_vec=unique(d3$Upstream.Regulator),
+                 select_by="Upstream.Regulator",
+                 cat_1="Analysis",
+                 fix_by=c("Bias.corrected.z.score","p.value.of.overlap"),
+                 replace_vec=c(0,1),current_set=c_set)
+  d4$Bias.corrected.z.score <- as.numeric(d4$Bias.corrected.z.score)
+  d4$p.value.of.overlap <- as.numeric(d4$p.value.of.overlap)
+  d3$Analysis <- factor(d3$Analysis,levels=c_set)
+  d4$Analysis <- factor(d4$Analysis,levels=c_set)
   
   p <- ggplot(d4,aes(x=Bias.corrected.z.score,y=Upstream.Regulator,fill=Analysis))+
     geom_bar(stat='identity',position='dodge',width=0.7)+theme_bw()+
@@ -84,7 +127,8 @@ gen_plot <- function(c_set,k=3,canon_select=NULL,
   sig_tot_mt <- melt(sig_tot)
   sig_tot_mt$id <- rownames(sig_tot_mt)
   p <- ggplot(sig_tot_mt,aes(x=id,y=value))+geom_bar(stat='identity')+
-    theme_bw()+theme(axis.text=element_text(color='black'))+
+    theme_bw()+theme(axis.text=element_text(color='black'),
+                     axis.text.x=element_text(angle=45,hjust=1))+
     xlab("Datasets")+ylab("Significantly enriched Upstream Regulators")
   print(p)
   
@@ -118,6 +162,27 @@ gen_plot <- function(c_set,k=3,canon_select=NULL,
   }
   ##Filter out features with Z-score==NA in all entries
   d4 <- d3[d3$Master.Regulator%in%names(z_valid[z_valid]),]
+  
+  ## Clean features
+  d3 <- clean_df(d3,feat_vec=unique(d3$Master.Regulator),
+                       select_by="Master.Regulator",
+                       cat_1="Analysis",
+                       fix_by=c("Activation.z.score","p.value.of.overlap"),
+                       replace_vec=c(0,1),current_set=c_set)
+  d3$Activation.z.score <- as.numeric(d3$Activation.z.score)
+  d3$p.value.of.overlap <- as.numeric(d3$p.value.of.overlap)
+  
+  d4 <- clean_df(d4,feat_vec=unique(d3$Master.Regulator),
+                 select_by="Master.Regulator",
+                 cat_1="Analysis",
+                 fix_by=c("Activation.z.score","p.value.of.overlap"),
+                 replace_vec=c(0,1),current_set=c_set)
+  d4$Activation.z.score <- as.numeric(d4$Activation.z.score)
+  d4$p.value.of.overlap <- as.numeric(d4$p.value.of.overlap)
+  
+  d3$Analysis <- factor(d3$Analysis,levels=c_set)
+  d4$Analysis <- factor(d4$Analysis,levels=c_set)
+  
   ## Plot the Z-score for causal networks
   p <- ggplot(d4,aes(x=Activation.z.score,y=Master.Regulator,fill=Analysis))+
     geom_bar(stat='identity',position='dodge',width=0.7)+theme_bw()+
@@ -132,10 +197,10 @@ gen_plot <- function(c_set,k=3,canon_select=NULL,
   sig_tot_mt <- melt(sig_tot)
   sig_tot_mt$id <- rownames(sig_tot_mt)
   p <- ggplot(sig_tot_mt,aes(x=id,y=value))+geom_bar(stat='identity')+
-    theme_bw()+theme(axis.text=element_text(color='black'))+
+    theme_bw()+theme(axis.text=element_text(color='black'),
+                     axis.text.x=element_text(angle=45,hjust=1))+
     xlab("Datasets")+ylab("Significantly enriched Master Regulators")
   print(p)
-  
   
   ## compile the canonical pathways
   d=lapply(c_list,function(x) x[[1]][[3]])
@@ -164,7 +229,23 @@ gen_plot <- function(c_set,k=3,canon_select=NULL,
     z_valid <- sapply(canon_select,fix_slots,d3,"Ingenuity.Canonical.Pathways","zScore")
   }
   d4 <- d3[d3$Ingenuity.Canonical.Pathways%in%names(z_valid[z_valid]),]
+  ## Clean features
+  d3 <- clean_df(d3,feat_vec=unique(d3$Ingenuity.Canonical.Pathways),
+                 select_by="Ingenuity.Canonical.Pathways",
+                 cat_1="Analysis",
+                 fix_by=c("zScore","X.log.p.value."),
+                 replace_vec=c(0,1),current_set=c_set)
+  d3$zScore <- as.numeric(d3$zScore)
+  d3$X.log.p.value. <- as.numeric(d3$X.log.p.value.)
   
+  d4 <- clean_df(d4,feat_vec=unique(d3$Ingenuity.Canonical.Pathways),
+                 select_by="Ingenuity.Canonical.Pathways",
+                 cat_1="Analysis",
+                 fix_by=c("zScore","X.log.p.value."),
+                 replace_vec=c(0,1),current_set=c_set)
+  d4$zScore <- as.numeric(d4$zScore)
+  d4$X.log.p.value. <- as.numeric(d4$X.log.p.value.)  
+
   p <- ggplot(d4,aes(x=zScore,y=Ingenuity.Canonical.Pathways,fill=Analysis))+
     geom_bar(stat='identity',position='dodge',width=0.7)+theme_bw()+
     scale_y_discrete(labels = function(x) str_wrap(x, width = 40))+
@@ -180,7 +261,8 @@ gen_plot <- function(c_set,k=3,canon_select=NULL,
   sig_tot_mt <- melt(sig_tot)
   sig_tot_mt$id <- rownames(sig_tot_mt)
   p <- ggplot(sig_tot_mt,aes(x=id,y=value))+geom_bar(stat='identity')+
-    theme_bw()+theme(axis.text=element_text(color='black'))+
+    theme_bw()+theme(axis.text=element_text(color='black'),
+                     axis.text.x=element_text(angle=45,hjust=1))+
     xlab("Datasets")+ylab("Significantly enriched Canonical Pathways")
   print(p)
   
@@ -221,5 +303,5 @@ gen_plot(ipa_comparisons_to_make,pdf_prefix="Plot_1")
 
 ipa_comparisons_to_make <- c("a.vs.ctl_ko","a.vs.ctl_wt",
                              "b.vs.ctl_ko","b.vs.ctl_wt")
-gen_plot(ipa_comparisons_to_make,pdf_prefix="Plot_2")
+gen_plot(ipa_comparisons_to_make,k=5,pdf_prefix="Plot_2")
 
